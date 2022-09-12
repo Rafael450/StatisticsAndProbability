@@ -1,0 +1,671 @@
+---
+title: "PROVA GED-13 1º Bimestre"
+author: "Rafael Camargo"
+date: "2022-09-07"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height=2.7, fig.width=6)
+```
+
+## Bibliotecas:
+
+```{r librarycall, message=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(quantmod)
+library(data.table) 
+library(ggpubr) 
+library(cowplot) 
+library(ichimoku)
+
+```
+
+## Questão 1
+
+Fazendo um a questão para um grupo de dados genérico, a média e a mediana já possuem funções prontas no R, para a moda:
+
+```{r q1Moda}
+
+amoda <- function(data) {
+  res <- which(tabulate(data) == max(tabulate(data)))
+  if (length(res) > 1) {
+    print('Amostra com várias modas:')
+  }
+  return(res)
+}
+
+```
+
+Variancia, desvio padrão e o grafico de linha já possuem funções no R, para o cálculo do retorno temos:
+
+```{r q1Retorno}
+retorno <- function(data) {
+  res <- c(0)
+  
+  for (dia in 2:length(data[, 2])) {
+    retorno <- (data[dia, 2]-data[dia-1, 2])/data[dia-1, 2]
+    res <- append(res, retorno)
+  }
+  
+  return(res)
+}
+
+
+```
+
+Para o gráfico de linha do retorno foi novamente utilizada o ggplot do R, assim como o violin plot, histograma, qqplot e a qqline. Para determinar a assimetria amostral, usamos a expressão:
+
+$$
+s_3 = \frac{n}{(n-1)(n-2)}\times\sum_{i=1}^{n} \left ( \frac{X_i-\bar{X}}{s}\right )^3
+$$ Sendo s o desvio padrão anteriormente calculado anteriormente.
+
+```{r q1ass}
+assimetria <- function(data) {
+  n <- length(data)
+  theMean <- mean(data)
+  dataSd <- sd(data)
+  s <- 0
+  for (i in 1:n) {
+    s <- s + n/((n-1)*(n-2))*((data[i]-theMean)/dataSd)^3
+  }
+  return(s)
+}
+
+```
+
+Para determinar a curtose amostral usamos a expressão: $$
+s_4 = \frac{n(n+1)}{(n-1)(n-2)(n-3)}\times \sum_{i=1}^{n}\left ( \frac{X_i-\bar{X}}{s} \right)^4 - \frac{3(n-1)^2}{(n-2)(n-3)}
+$$
+
+```{r q1curt}
+curtose <- function(data) {
+  n <- length(data)
+  theMean <- mean(data)
+  dataSd <- sd(data)
+  s <- (-3)*(n-1)^2/((n-2)*(n-3))
+  for (i in 1:n) {
+    s <- s + n*(n+1)/((n-1)*(n-2)*(n-3))*((data[i]-theMean)/dataSd)^4
+  }
+  return(s)
+}
+
+```
+
+Assim, a função principal fica da seguinte forma para todos às análises:
+
+```{r main}
+main <- function(data) {
+  data <- xts_df(data)
+  colnames(data) <- c('index', 'fecha')
+  
+  # Média
+  print(sprintf("Média: %f", mean(data[,2])))
+  
+  # Moda
+  print(sprintf("Moda: %f", amoda(data[,2])))
+  
+  # Mediana
+  print(sprintf("Mediana: %f", median(data[,2])))
+  
+  # Variância
+  print(sprintf("Variância: %f", var(data[,2])))
+  
+  # Desvio padrão
+  dataSd <- sd(data[,2])
+  print(sprintf("Desvio padrão: %f", dataSd))
+  
+  # Gráfico de linha do preço de fechamento
+  print(ggplot(data, aes(x = get('index'), y = get('fecha'))) + geom_line() + 
+          labs(y = 'Fechamento', x = 'Dias', title = 'Gráfico de linha do preço de fechamento'))
+  
+  # Retorno
+  ret <- retorno(data)
+  retdata <- data
+  retdata$new <- ret
+  # OBS: Após uma longa análise, cheguei à conclusão que é desnecessario printar 
+  #o vetor de retornos calculados.
+  
+  # Gráfico de linha do Retorno
+  print(ggplot(retdata, aes(x = 1:nrow(retdata), y = get('new'))) + geom_line() + 
+          labs(y = 'Retorno', x = 'Dias', title = 'Gráfico de linha do retorno'))
+  
+  # Violin Plot para os dados de Preço de Fechamento e do Retorno.
+  viodata <- data
+  viodata$labedl <- rep(c('Fechamento'), times=length(data[, 2]))
+  colnames(viodata) <- c('index', 'fecha', 'label')
+  print(ggplot(viodata, aes(x = get('label'), y = get('fecha'))) + geom_violin(trim=FALSE) + 
+          labs(y = NULL, x = NULL, title='Violin Plot do preço de fechamento'))
+  
+  retdata$label <- rep(c('Retorno'), times=length(data[, 2]))
+  print(ggplot(retdata, aes(x = get('label'), y = get('new'))) + geom_violin(trim=FALSE) + 
+          labs(y = NULL, x = NULL, title='Violin Plot do retorno'))
+  
+  # Histograma para os dados de Preço de Fechamento e do Retorno.
+  print(ggplot(viodata, aes(x = get('fecha'))) + geom_histogram(color="blue", fill="white") + 
+          labs(y = NULL, x = NULL, title='Histograma do preço de fechamento'))
+  
+  print(ggplot(retdata, aes(x = get('new'))) + geom_histogram(color="red", fill="white") + 
+          labs(y = NULL, x = NULL, title='Histograma do retorno'))
+  
+  # QQPlot e QQLine do retorno
+  print(qplot(sample = retdata[, 3]) + geom_qq_line() + 
+          labs(y = 'Retorno', title='QQPlot e QQline do retorno'))
+  
+  # Assimetria OBS: O valor será interpretado conforme solicitado no enunciado na chamada 
+  #da função para cada variável financeira.
+  print(sprintf("Assimetria amostral: %f", assimetria(ret)))
+  
+  # Curtose amostral OBS: O valor será interpretado conforme solicitado no enunciado na 
+  #chamada da função para cada variável financeira.
+  print(sprintf("Curtose amostral: %f", curtose(ret)))
+  
+}
+
+
+
+```
+
+### S&P500
+
+Carregamento das informações do Índice S&P500:
+
+```{r q1Spload}
+start <- as.Date("2022-01-01")
+end <- as.Date("2022-09-01")
+dados.sp <- quantmod::getSymbols("^GSPC", src = "yahoo", from = start, to = end,auto.assign = FALSE)
+stdpoors <- na.omit(dados.sp)
+
+stdpoors <- stdpoors$GSPC.Close
+
+```
+
+Estatísticas:
+
+```{r Spcall}
+main(stdpoors)
+
+```
+
+A assimetria amostra resultou -0,214683, ou seja, possui uma assimetria negativa, o que significa que os valores estão mais concentrados à direita. Além disso, como a curtose amostral é de -0,101986, a curtose é platicúrtica, ou seja, a curva é mais "achatada".
+
+### Dow Jones
+
+Carregamento das informações do Índice Dow Jones:
+
+```{r q1Dowload}
+dados.dj <- quantmod::getSymbols("^DJI", src = "yahoo", from = start, to = end,auto.assign = FALSE)
+dowjones <- na.omit(dados.dj)
+
+dowjones <- dowjones$DJI.Close
+
+```
+
+Estatísticas:
+
+```{r Dowcall}
+main(dowjones)
+
+```
+
+A assimetria amostra resultou -0,224311, ou seja, possui uma assimetria negativa, o que significa que os valores estão mais concentrados à direita. Além disso, como a curtose amostral é de 0,262944, a curtose é leptocúrtica, ou seja, a curva é mais "pontuda".
+
+### Nasdaq
+
+Carregamento das informações do Índice Nasdaq:
+
+```{r q1Nasload}
+dados.nasdaq <- quantmod::getSymbols("^IXIC", src = "yahoo", from = start, to =end, auto.assign = FALSE)
+nasdaq <- na.omit(dados.nasdaq)
+
+nasdaq <- nasdaq$IXIC.Close
+
+```
+
+Estatísticas:
+
+```{r Nascall}
+main(nasdaq)
+
+```
+
+A assimetria amostra resultou -0,097247, ou seja, possui uma assimetria negativa, o que significa que os valores estão mais concentrados à direita. Além disso, como a curtose amostral é de -0,569675, a curtose é platicúrtica, ou seja, a curva é mais "achatada".
+
+### IBOVESPA
+
+Carregamento das informações do Índice IBOVESPA:
+
+```{r q1IbovespaLoad}
+dados.bovespa <- quantmod::getSymbols("^BVSP", src = "yahoo", from = start, to =end, auto.assign = FALSE)
+bovespa <- na.omit(dados.bovespa)
+
+bovespa <- bovespa$BVSP.Close
+
+```
+
+Estatísticas:
+
+```{r IbovespaCall}
+main(bovespa)
+
+```
+
+A assimetria amostra resultou -0,260256, ou seja, possui uma assimetria negativa, o que significa que os valores estão mais concentrados à direita. Além disso, como a curtose amostral é de -0,143831, a curtose é platicúrtica, ou seja, a curva é mais "achatada".
+
+### Preço do Petróleo Brent
+
+Carregamento das informações do Preço do Petróleo Brent:
+
+```{r q1BrentLoad}
+dados.brent <- quantmod::getSymbols("BZ=F", src = "yahoo", from = start, to = end,auto.assign = FALSE)
+brent <- na.omit(dados.brent)
+
+brent <- brent$`BZ=F.Close`
+
+```
+
+Estatísticas:
+
+```{r BrentCall}
+main(brent)
+
+```
+
+A assimetria amostra resultou -0,411252, ou seja, possui uma assimetria negativa, o que significa que os valores estão mais concentrados à direita. Além disso, como a curtose amostral é de 2,475360, a curtose é leptocúrtica, ou seja, a curva é mais "pontuda".
+
+### Cotação Dólar/Real
+
+Carregamento das informações da Cotação Dólar/Real:
+
+```{r q1DolarLoad}
+dados.dolar.real <- quantmod::getSymbols("BRL=X", src = "yahoo", from = start, to= end, auto.assign = FALSE)
+dolar.real <- na.omit(dados.dolar.real)
+
+dolar.real <- dolar.real$`BRL=X.Close`
+
+```
+
+Estatísticas:
+
+```{r DolarCall}
+main(dolar.real)
+
+```
+
+A assimetria amostra resultou 0,358391, ou seja, possui uma assimetria positiva, o que significa que os valores estão mais concentrados à esquerda. Além disso, como a curtose amostral é de 0,314937, a curtose é leptocúrtica, ou seja, a curva é mais "pontuda".
+
+### Bitcoin
+
+Carregamento das informações do preço do Bitcoin:
+
+```{r q1BitcoinLoad}
+dados.btc <- quantmod::getSymbols("BTC-USD", src = "yahoo", from = start, to =end, auto.assign = FALSE)
+dolar.bitcoin <- na.omit(dados.btc)
+
+dolar.bitcoin <- dolar.bitcoin$`BTC-USD.Close`
+
+```
+
+Estatísticas:
+
+```{r BitcoinCall}
+main(dolar.bitcoin)
+
+```
+
+A assimetria amostra resultou -0,167268, ou seja, possui uma assimetria negativa, o que significa que os valores estão mais concentrados à direita. Além disso, como a curtose amostral é de 3,338171, a curtose é leptocúrtica, ou seja, a curva é mais "pontuda".
+
+## Questão 2
+
+### Faixa 1
+
+O número total de possibilidades de resultados da aposta simples é pode ser calculado observando que há 6 possibilidades de números cuja ordem não importa na matriz normal e 2 na matriz de trevos, ou seja:
+
+$$
+N = \frac{50!}{44! \times 6!} \times \frac{6!}{4! \times 2!}
+$$
+
+Como só há um resultado final.
+
+E sua probabilidade:$$P = \frac{1}{N}$$
+
+```{r q3f1}
+N <- factorial(50)/(factorial(44)*factorial(6))*factorial(6)/(factorial(4)*factorial(2))
+P1 <- 1/N
+N
+P1
+
+```
+
+Assim, **N = 238360500** e $P1= 4,195326*10^{-9}$
+
+### Faixa 2
+
+Para a faixa dois ocorre deve-se acertar os 6 números da matriz normal e acertar 1 ou 2 da trevo, ou seja, o número de possibilidades disso ocorre é de:
+
+$$
+N_2 = \frac{6!}{6!} \times (2\times4 + \frac{4!}{2!\times 2!})
+$$
+
+```{r q3f2}
+
+N2 <- (factorial(4)/(factorial(2)*factorial(2))+2*4)
+# Chance em:
+N/N2
+# Probabilidade:
+N2/N
+
+```
+
+Assim, a chance é de 1 acerto em 17025750 e a probabilidade é de $5,873456*10^{-08}$.
+
+### Faixa 3
+
+Como são 5 números corretos e 1 errado na matriz normal e 2 corretos na de trevo, temos que de 6 escolher 5, e um outro número dos 44 restantes:
+
+$$
+N_3 = \frac{6!}{5!\times1!}\times44
+$$
+
+```{r q3f3}
+N3 <- factorial(6)/factorial(5)*44
+# Chance em:
+N/N3
+# Probabiliade
+N3/N
+
+```
+
+Portanto, a chance é de 1 acerto em 902881 e a probabilidade é de $1,107566*10^{-06}$.
+
+### Faixa 4
+
+Repetindo o processo da faixa 2 e 3:
+
+$$
+N_4 = \frac{6!}{5!\times1!}\times 44\times (2\times4 + \frac{4!}{2!\times 2!})
+$$
+
+```{r q3f4}
+N4 <- factorial(6)/factorial(5)*44*(2*4+factorial(4)/(factorial(2)*factorial(2)))
+# Chance em:
+N/N4
+# Probabiliade
+N4/N
+
+```
+
+Assim, a chance é de 1 acerto em 64491 e a probabilidade é de $1.550592*10^{-05}$.
+
+### Faixa 5
+
+Como são 2 acertos da matriz do trevo e 4 na normal:
+
+$$
+N_5 = \frac{6!}{4!\times2!}\times\frac{44!}{42!\times2!}
+$$
+
+```{r q3f5}
+N5 <- factorial(6)/(factorial(4)*factorial(2))*factorial(44)/(factorial(42)*factorial(2))
+# Chance em:
+N/N5
+# Probabiliade
+N5/N
+
+```
+
+Assim, a chance é de 1 acerto em 16798 e a probabilidade é de $5,953168*10^{-05}$.
+
+### Faixa 6
+
+Repetindo o processo da faixa 2 e 5
+
+$$
+N_6 = \frac{6!}{4!\times2!}\times\frac{44!}{42!\times2!}\times (2\times4 + \frac{4!}{2!\times 2!})
+$$
+
+```{r q3f6}
+N6 <- factorial(6)/(factorial(4)*factorial(2))*factorial(44)/(factorial(42)*factorial(2))*(factorial(4)/(factorial(2)*factorial(2))+2*4)
+# Chance em:
+N/N6
+# Probabiliade
+N6/N
+
+```
+
+Assim, a chance é de 1 acerto em 1200 e a probabilidade é de 0,0008334435.
+
+### Faixa 7
+
+Como são 3 acertos e 3 erros na matriz normal:
+
+$$
+N_7 = \frac{6!}{3!\times3!}\times\frac{44!}{41!\times3!}
+$$
+
+```{r q3f7}
+N7 <- factorial(6)/(factorial(3)*factorial(3))*factorial(44)/(factorial(41)*factorial(3))
+# Chance em:
+N/N7
+# Probabiliade
+N7/N
+
+```
+
+Assim, a chance é de 1 acerto em 900 e a probabilidade é de 0,001111258.
+
+### Faixa 8
+
+Repetindo o processo da faixa 7 e como queremos um unico acerto na matriz do trevo.
+
+$$
+N_8 = \frac{6!}{3!\times3!}\times\frac{44!}{41!\times3!}\times (2\times4)
+$$
+
+```{r q3f8}
+N8 <- factorial(6)/(factorial(3)*factorial(3))*factorial(44)/(factorial(41)*factorial(3))*(2*4)
+# Chance em:
+N/N8
+# Probabiliade
+N8/N
+
+```
+
+Assim, a chance é de 1 acerto em 112 e a probabilidade é de 0,008890064.
+
+### Faixa 9
+
+Como queremos dois acertos na normal e 4 erros:
+
+$$
+N_9 = \frac{6!}{2!\times4!}\times\frac{44!}{40!\times4!}
+$$
+
+```{r q3f9}
+N9 <- factorial(6)/(factorial(4)*factorial(2))*factorial(44)/(factorial(40)*factorial(4))
+# Chance em:
+N/N9
+# Probabiliade
+N9/N
+
+```
+
+Assim, a chance é de 1 acerto em 117 e a probabilidade é de 0,008542795.
+
+### Faixa 10
+
+Como queremos dois acertos na normal e 4 erros na matriz normal e apenas 1 acerto na do trevo:
+
+$$
+N_{10} = \frac{6!}{2!\times4!}\times\frac{44!}{40!\times4!}\times(2\times4)
+$$
+
+```{r q3f10}
+N10 <- factorial(6)/(factorial(4)*factorial(2))*factorial(44)/(factorial(40)*factorial(4))*2*4
+# Chance em:
+N/N10
+# Probabiliade
+N10/N
+
+```
+
+Assim, a chance é de 1 acerto em 15 e a probabilidade é de 0,06834236.
+
+# Questão 3
+
+Primeiramente, vamos criar uma função que recebe um argumento que é a probabilidade P(CF+) de determinado portador e retorna a probabilidade P(CF+/NEG) dada a fórmula fornecida no enunciado:
+
+$$
+P(CF\_+\|Neg) = \frac{P(CF_+)\times P(Neg|CF_+)}{\sum_{k=1}^{2}P(CF_k)\times P(Neg|CF_k)}
+$$
+
+```{r q3}
+
+ehportador <- function(prob){
+  pncposi <- 0.01
+  pncneg <- 0.998
+  
+  res <- prob*pncposi/(prob*pncposi+(1-prob)*pncneg)
+  return(res)
+}
+
+```
+
+Assim, respondendo os itens:
+
+### Item a)
+
+Temos que P(CF+) = 0.040 para Caucasianos Não Hispânicos, assim:
+
+```{r q3a}
+# Probabilidade:
+probA <- ehportador(0.04)
+probA
+# Indivíduos por milhão de habitantes:
+probA*1e6
+```
+
+Dessa forma, a probabilidade para esse grupo é *P(CF+/NEG) = 0,0004173274*, tendo aproximadamente *417 pessoas* com a doença por milhão de habitantes.
+
+### Item b)
+
+Temos que P(CF+) = 0,017 para Hispano-americanos, assim:
+
+```{r q3b}
+# Probabilidade:
+probB <- ehportador(0.017)
+probB
+# Indivíduos por milhão de habitantes:
+probB*1e6
+```
+
+Dessa forma, a probabilidade para esse grupo é *P(CF+/NEG) = 0,0001732565*, tendo aproximadamente *173 pessoas* com a doença por milhão de habitantes.
+
+### Item c)
+
+Temos que P(CF+) = 0,016 para Afro-americanos, assim:
+
+```{r q3c}
+# Probabilidade:
+probC <- ehportador(0.016)
+probC
+# Indivíduos por milhão de habitantes:
+probC*1e6
+```
+
+Dessa forma, a probabilidade para esse grupo é *P(CF+/NEG) = 0,0001629009*, tendo aproximadamente *163 pessoas* com a doença por milhão de habitantes.
+
+### Item d)
+
+Temos que P(CF+) = 0,042 para Judeus Asquenazes, assim:
+
+```{r q3d}
+# Probabilidade:
+probD <- ehportador(0.042)
+probD
+# Indivíduos por milhão de habitantes:
+probD*1e6
+```
+
+Dessa forma, a probabilidade para esse grupo é *P(CF+/NEG) = 0,0004390991*, tendo aproximadamente *439 pessoas* com a doença por milhão de habitantes.
+
+### Item e)
+
+Temos que P(CF+) = 0,011 para Asiático-americanos, assim:
+
+```{r q3e}
+# Probabilidade:
+probE <- ehportador(0.011)
+probE
+# Indivíduos por milhão de habitantes:
+probE*1e6
+```
+
+Dessa forma, a probabilidade para esse grupo é *P(CF+/NEG) = 0,0001114339*, tendo aproximadamente *111 pessoas* com a doença por milhão de habitantes.
+
+### Questão 4:
+
+#### 4.1)
+
+##### a)
+
+Temos que: $$ 
+f_X (x) = \frac{3}{x^4}, x > 1
+$$
+
+Assim, pra provar que a função é função densidade de probabilidade temos que:
+
+$$
+\int_{1}^{\infty} f_{X}(x) dx = \int_{1}^{\infty}\frac{3}{x^{4}}dx = \frac{-1}{x^{3}} \bigg {|}_{1}^{\infty} = 1
+$$
+
+##### b)
+
+Como f(x) é função densidade de probabilidade: $$
+P(3,4 \leq X < 7,1) = \int_{3,4}^{7,1}f_X(x)dx = \frac{-1}{x^3}\bigg|_{3,4}^{7,1} = 0,0226 = 2,26\%
+$$
+
+##### c)
+
+Temos que o valor esperado é dado por:
+
+$$
+E[X] = \int_{1}^{\infty}xf(x) dx = \int_{1}^{\infty}x\frac{3}{x^4} dx = \int_{1}^{\infty}\frac{3}{x^3} dx = -\frac{3}{2x^2}\bigg|_{1}^{\infty} = \frac{3}{2}
+$$
+
+##### d)
+
+Temos que $Var[X] = E[X^2]-E^2[X]$, assim: $$
+E[X^2] = \int_{1}^{\infty}x^2f(x) dx = \int_{1}^{\infty}x^2\frac{3}{x^4} dx = \int_{1}^{\infty}\frac{3}{x^2} dx = -\frac{3}{x}\bigg|_{1}^{\infty} = 3
+$$ Ou seja: $$
+Var[X] = 3-\left( \frac{3}{2} \right )^2 = 3 - \frac{9}{4} = \frac{3}{4}
+$$
+
+#### 4.2)
+
+Como as variáveis são independentes é válido que $E[XY] = E[X]E[Y]$, dessa forma
+
+$$
+E[Y] = 2
+$$ $$
+E[X^2Y]=6 \Rightarrow E[X^2] = 3
+$$ $$
+E[(XY)^2] = E[X^2Y^2] = 24 \Rightarrow E[Y^2] = 8
+$$ $$
+E[XY^2] = 8 \Rightarrow E[X] = 1
+$$
+
+#### 4.3)
+
+Temos que função densidade de probabilidade para uma variável aleatória com distribuição deCauchy é dada por: $$
+f_X(x) = \frac{1}{\pi b \left[1+ \left( \frac{x-a}{b} \right)^2   \right]}, \space \space x \in \mathbb{R}
+$$ Como a distribuição Cauchy padrão é obtida fazendo a = 0 e b = 1.
+
+$$
+f_X(x) = \frac{1}{\pi(1+x^2)} \\
+E[X] = \int_{-\infty}^{\infty} x f_X(x)dx = \int_{-\infty}^{\infty} x \frac{1}{\pi(1+x^2)}dx\\
+$$ Como $x \frac{1}{\pi(1+x^2)}$ é impar $\int_{-\infty}^{\infty} x \frac{1}{\pi(1+x^2)}dx = 0$, ou seja, E[X] = 0.
